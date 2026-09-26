@@ -298,7 +298,8 @@ function composite(t) {
   c.globalCompositeOperation = 'multiply'; c.drawImage(grainC, 0, 0);
   c.globalCompositeOperation = 'source-over';
 }
-window.renderAt = async (t, type = 'image/png', q = .92) => { T = t; await redraw(); composite(t); return outC.toDataURL(type, q); };
+window.renderFrame = async (t) => { T = t; await redraw(); composite(t); };
+window.renderAt = async (t, type = 'image/png', q = .92) => { await window.renderFrame(t); return outC.toDataURL(type, q); };
 // Contact sheet of several times, for visual checks: returns { url, ms[] }. crop = [x, y, w, h] fills each cell with just
 // that region of the frame, at full resolution (for checking faces, hands and contacts up close). at = [x, y, w, h]
 // instead crops w × h around the WORLD point (x, y), wherever each frame's camera put it (a foot, a splash, a prop on
@@ -308,7 +309,7 @@ window.renderSheet = async (times, cols = 3, w = 640, crop = null, at = null) =>
   const [, , cw, ch] = at || crop || [0, 0, W, H], h = Math.round(w * ch / cw), rows = Math.ceil(times.length / cols), sc = document.createElement('canvas');
   sc.width = cols * w; sc.height = rows * h; const c = sc.getContext('2d'), ms = [];
   for (let i = 0; i < times.length; i++) {
-    const t0 = performance.now(); T = times[i]; await redraw(); composite(times[i]); ms.push(Math.round(performance.now() - t0));
+    const t0 = performance.now(); await window.renderFrame(times[i]); ms.push(Math.round(performance.now() - t0));
     const x = (i % cols) * w, y = Math.floor(i / cols) * h;
     const [cx, cy] = at ? toScreen(at[0], at[1], LAST_CAM).map((v, j) => v - (j ? ch : cw) / 2) : crop || [0, 0];
     c.drawImage(outC, cx, cy, cw, ch, x, y, w, h); c.fillStyle = 'rgba(0,0,0,.65)'; c.fillRect(x, y, 84, 24); c.fillStyle = '#fff'; c.font = '15px sans-serif'; c.fillText(times[i].toFixed(2) + 's', x + 6, y + 17);
@@ -318,9 +319,121 @@ window.renderSheet = async (times, cols = 3, w = 640, crop = null, at = null) =>
 window.gpuInfo = () => { const gl = drawingContext, e = gl.getExtension('WEBGL_debug_renderer_info'); return e ? gl.getParameter(e.UNMASKED_RENDERER_WEBGL) : gl.getParameter(gl.RENDERER); };
 
 function devUI() {
-  const s = document.getElementById('scrub'), lab = document.getElementById('tt'); s.max = window.LOOP ? window.LOOP.len : DUR;
-  let busy = false, want = null;
-  const go = async () => { if (busy) return; busy = true; while (want != null) { const t = want; want = null; const t0 = performance.now(); await window.renderAt(t); lab.textContent = `${t.toFixed(2)}s  ·  ${Math.round(performance.now() - t0)} ms/frame`; } busy = false; };
-  s.addEventListener('input', () => { want = +s.value; go(); });
-  want = +(new URLSearchParams(location.search).get('t') || 0); s.value = want; go();
+  const s = document.getElementById('scrub'), lab = document.getElementById('tt');
+  const btnPlay = document.getElementById('play'), btnPrev = document.getElementById('prev'), btnNext = document.getElementById('next');
+  const maxT = window.LOOP ? window.LOOP.len : DUR;
+  const fps = 24, dt = 1 / fps;
+  s.max = maxT;
+  s.step = dt;
+
+  let busy = false, want = null, playing = false;
+  let playStartWall = 0, playStartT = 0, curT = 0;
+
+  function formatTime(t, ms) {
+    const f = Math.round(t * fps), totalF = Math.round(maxT * fps);
+    let extra = '';
+    if (window.LOOP) {
+      extra = ' · loop';
+    } else if (SHOTS.length) {
+      let idx = 0;
+      while (idx + 1 < SHOTS.length && t >= SHOTS[idx + 1][0]) idx++;
+      const name = SHOTS[idx][1].name;
+      extra = ` · shot ${idx + 1}/${SHOTS.length}${name ? ' (' + name + ')' : ''}`;
+    }
+    const msStr = ms != null ? ` · ${ms} ms/frame` : '';
+    return `${t.toFixed(2)}s / ${maxT.toFixed(2)}s  (f ${f}/${totalF})${extra}${msStr}`;
+  }
+
+  const renderCurrent = async (t) => {
+    curT = clamp(t, 0, maxT);
+    s.value = curT;
+    const t0 = performance.now();
+    await window.renderFrame(curT);
+    const ms = Math.round(performance.now() - t0);
+    lab.textContent = formatTime(curT, ms);
+  };
+
+  const go = async () => {
+    if (busy) return;
+    busy = true;
+    while (want != null) {
+      const t = want;
+      want = null;
+      await renderCurrent(t);
+    }
+    busy = false;
+  };
+
+  function requestTime(t) {
+    want = clamp(t, 0, maxT);
+    go();
+  }
+
+  function step(frames) {
+    setPlaying(false);
+    const targetF = Math.round(curT * fps) + frames;
+    requestTime(targetF / fps);
+  }
+
+  function setPlaying(p) {
+    if (playing === p) return;
+    playing = p;
+    if (btnPlay) btnPlay.textContent = playing ? '⏸' : '▶';
+    if (playing) {
+      if (curT >= maxT - dt * 0.5) curT = 0;
+      playStartWall = performance.now();
+      playStartT = curT;
+      playbackLoop();
+    }
+  }
+
+  async function playbackLoop() {
+    while (playing) {
+      const elapsed = (performance.now() - playStartWall) / 1000;
+      let t = playStartT + elapsed;
+      if (t >= maxT) {
+        playStartWall = performance.now();
+        playStartT = 0;
+        t = 0;
+      }
+      const f = Math.round(t * fps);
+      want = f / fps;
+      await go();
+      await new Promise(r => requestAnimationFrame(r));
+    }
+  }
+
+  if (btnPlay) btnPlay.addEventListener('click', () => { btnPlay.blur(); setPlaying(!playing); });
+  if (btnPrev) btnPrev.addEventListener('click', () => { btnPrev.blur(); step(-1); });
+  if (btnNext) btnNext.addEventListener('click', () => { btnNext.blur(); step(1); });
+
+  s.addEventListener('input', () => {
+    setPlaying(false);
+    requestTime(+s.value);
+  });
+
+  window.addEventListener('keydown', (e) => {
+    if (['text', 'search', 'password'].includes(e.target.type) || e.target.tagName === 'TEXTAREA') return;
+    if (e.code === 'Space') {
+      e.preventDefault();
+      setPlaying(!playing);
+    } else if (e.code === 'ArrowLeft') {
+      e.preventDefault();
+      step(e.shiftKey ? -fps : -1);
+    } else if (e.code === 'ArrowRight') {
+      e.preventDefault();
+      step(e.shiftKey ? fps : 1);
+    } else if (e.code === 'Home') {
+      e.preventDefault();
+      setPlaying(false);
+      requestTime(0);
+    } else if (e.code === 'End') {
+      e.preventDefault();
+      setPlaying(false);
+      requestTime(maxT);
+    }
+  });
+
+  const initialT = +(new URLSearchParams(location.search).get('t') || 0);
+  requestTime(initialT);
 }
