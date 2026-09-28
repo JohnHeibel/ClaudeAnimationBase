@@ -290,7 +290,7 @@ node render.mjs --encode --out=out/video.mp4                    # … then encod
   - `spring(t, t0, k, w)`: a damped wobble after an event, for settles and follow-through.
   - `ring(t, [t0, t1, ...])`: one `spring` kick per event time.
   - `arcPt(p0, p1, h, k)`: a point on a thrown arc.
-  - `onTwos(t)`: holds each drawing for two frames. Wrap a shot's `t` in it for a snappier, hand-drawn feel.
+  - `onTwos(t)`: holds each drawing for two frames, for a snappier, hand-drawn feel. Pass it to the characters and props, and keep the camera, light fades and anything else that moves the whole frame on the continuous `t`. On twos, a pan or a push moves only 12 times a second and looks laggy.
 - **Camera:**
   - `camBegin(cx, cy, zoom, rot)` … `camEnd()`: world point (cx, cy) lands at screen centre. One level only; always pair them.
   - `toScreen(x, y)`: world → screen while a camera is active. Use it to aim an iris at a character.
@@ -433,6 +433,7 @@ These are the things that make a Clawd video look generated. Check your storyboa
 - mechanical motion: linear moves, every part moving at once, both arms or several characters in sync
 - timid poses and takes that barely read
 - jittery linework: still things re-boiling every frame because something moving before them shifted the random stream (`boilSeed`)
+- a laggy camera: pans and pushes computed from `onTwos(t)`, so the whole frame steps 12 times a second
 - hard cuts everywhere, or a video that just starts and stops
 - 3D rotation, perspective boxes or projected turns
 - plain p5 shapes, gradients or digital glows mixed into the paint (use `paint`/`inkLine`/`glow`)
