@@ -58,7 +58,8 @@ const shakeXY = (t, amt) => { const f = Math.floor(t * 24); return [(hash(f * 1.
 // after landing, a hat that jiggles, a stack that sways, a tail that drags. k = damping, w = wobble speed (rad/s).
 const spring = (t, t0, k = 6, w = 18) => t < t0 ? 0 : Math.exp(-k * (t - t0)) * Math.sin(w * (t - t0));
 const ring = (t, evs, k = 6, w = 18) => evs.reduce((s, e) => s + spring(t, e, k, w), 0);    // one kick per event time
-// Hold each drawing for two frames (12 drawings a second), like hand-drawn animation "on twos". Wrap a shot's t in it.
+// Hold each drawing for two frames (12 drawings a second), like hand-drawn animation "on twos". Pass it to the characters
+// and props; keep the camera on the continuous t (on twos, a pan steps 12 times a second).
 const onTwos = t => Math.floor(t * 12 + 1e-6) / 12;
 // Point on a thrown or jumping arc from p0 to p1, peaking h px above the straight line; k = 0..1 along the flight.
 const arcPt = (p0, p1, h, k) => [lerp(p0[0], p1[0], k), lerp(p0[1], p1[1], k) - h * 4 * k * (1 - k)];
