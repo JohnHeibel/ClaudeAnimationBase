@@ -160,6 +160,26 @@ function through(P, n = 6) {
   out.push(P[P.length - 1]);
   return out;
 }
+// One side of a thick line (the path offset by its half-width), with its folds cut off. On the inside of a bend tighter
+// than the half-width, the offset runs past itself and back: a little loop (a swallowtail) whose outline crosses the
+// fill as a stray line. Where the side crosses itself within maxLen of arc, the loop's points all go to the crossing.
+// The point count is kept, because ribbon() pairs its two sides point for point.
+function unloop(S, maxLen) {
+  const n = S.length, out = S.map(p => [p[0], p[1]]);
+  const cross = (a, b, c, d) => {
+    const rx = b[0] - a[0], ry = b[1] - a[1], sx = d[0] - c[0], sy = d[1] - c[1], den = rx * sy - ry * sx; if (Math.abs(den) < 1e-12) return null;
+    const t = ((c[0] - a[0]) * sy - (c[1] - a[1]) * sx) / den, u = ((c[0] - a[0]) * ry - (c[1] - a[1]) * rx) / den;
+    return t >= 0 && t <= 1 && u >= 0 && u <= 1 ? [a[0] + rx * t, a[1] + ry * t] : null;
+  };
+  for (let i = 0; i < n - 3;) {
+    let hit = -1, X = null, acc = 0;
+    for (let j = i + 2; j < n - 1 && acc < maxLen; j++) { acc += Math.hypot(out[j][0] - out[j - 1][0], out[j][1] - out[j - 1][1]); const x = cross(out[i], out[i + 1], out[j], out[j + 1]); if (x) { hit = j; X = x; } }
+    if (hit < 0) { i++; continue; }
+    for (let k = i + 1; k <= hit; k++) out[k] = [X[0], X[1]];
+    i = hit;
+  }
+  return out;
+}
 // Tapered ribbon around a path (w0 wide at the start, w1 at the end), as one closed outline for paint().
 // Tails, tentacles, noodly arms, painted glyphs: one shape with one outline, so nothing looks glued on.
 function ribbon(P, w0, w1 = w0) {
@@ -168,7 +188,8 @@ function ribbon(P, w0, w1 = w0) {
     const a = C[Math.max(0, i - 1)], b = C[Math.min(n - 1, i + 1)], dx = b[0] - a[0], dy = b[1] - a[1], d = Math.hypot(dx, dy) || 1, w = lerp(w0, w1, i / Math.max(1, n - 1)) / 2;
     L.push([C[i][0] - dy / d * w, C[i][1] + dx / d * w]); R.push([C[i][0] + dy / d * w, C[i][1] - dx / d * w]);
   }
-  return L.concat(R.reverse());
+  const m = 3 * Math.max(Math.abs(w0), Math.abs(w1));   // (a sharp bend's fold spans about a width or two of arc)
+  return unloop(L, m).concat(unloop(R, m).reverse());
 }
 
 // ---------- paint wrapper ----------
