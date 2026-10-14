@@ -56,14 +56,19 @@ if (args.encode) {
 // --gpu-angle=vulkan|gl-egl: headless Linux on an NVIDIA GPU (e.g. a cloud or cluster node); plain --use-gl=angle gets
 // no WebGL context there. Check which GPU Chrome actually lands on with gpu_probe.mjs.
 const ANGLE = { vulkan: ['--use-angle=vulkan', '--enable-features=Vulkan'], 'gl-egl': ['--use-angle=gl-egl'] };
+// WSL2: the GPU is only reachable through Mesa's d3d12 driver (/dev/dxg), via ANGLE on gl-egl; the default flags get
+// no WebGL context, and gl-egl or vulkan alone land on llvmpipe (software). Windows Node + Chrome is much faster.
+const WSL = process.platform === 'linux' && existsSync('/dev/dxg');
 if (args['gpu-angle'] && !ANGLE[args['gpu-angle']]) { console.error(`--gpu-angle must be one of ${Object.keys(ANGLE)}`); process.exit(1); }
 const gpu = args['soft-gl'] ? ['--use-angle=swiftshader', '--enable-unsafe-swiftshader']
   : args['gpu-angle'] ? ANGLE[args['gpu-angle']]
+  : WSL ? ANGLE['gl-egl']
   : process.platform === 'win32' ? ['--use-angle=d3d11'] : process.platform === 'darwin' ? ['--use-angle=metal'] : ['--use-gl=angle'];
+const env = WSL ? { ...process.env, GALLIUM_DRIVER: 'd3d12' } : process.env;
 // Ubuntu 23.10+ blocks Chrome's user-namespace sandbox; headless rendering of local files doesn't need it.
 const sandbox = process.platform === 'linux' ? ['--no-sandbox'] : [];
 const browser = await puppeteer.launch({
-  executablePath: CHROME, headless: true, protocolTimeout: 0,
+  executablePath: CHROME, headless: true, protocolTimeout: 0, env,
   args: [...sandbox, '--allow-file-access-from-files', '--ignore-gpu-blocklist', ...gpu, '--enable-gpu-rasterization', '--window-size=1920,1080', '--disable-renderer-backgrounding', '--disable-background-timer-throttling']
 });
 async function openPage(tag = '') {

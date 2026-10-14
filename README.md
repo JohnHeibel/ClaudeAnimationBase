@@ -27,6 +27,8 @@ That renders the 11-second demo in [src/scenes/demo.js](src/scenes/demo.js). Ope
 
 On Linux, `render.mjs` starts Chrome with `--no-sandbox` (Ubuntu 23.10+ blocks Chrome's sandbox in headless use) and also finds a Chromium installed by Playwright. With no GPU at all, add `--soft-gl` to render WebGL in software: slow on watercolour fills, but it works. On a headless Linux machine with an NVIDIA GPU (a cloud or cluster node), add `--gpu-angle=gl-egl` (or `vulkan`); `node gpu_probe.mjs <chrome path>` shows which renderer each set of flags gets.
 
+On WSL2, `render.mjs` reaches the GPU through Mesa's d3d12 driver, so WebGL works there without flags, but slowly, and parallel workers can time out loading the page (use `--workers=1`). Windows Node and Chrome are about five times faster on the same machine: copy the project to the Windows drive and run `node.exe render.mjs …` there.
+
 ## What's here
 
 | path | what it is |
